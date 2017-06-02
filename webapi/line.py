@@ -131,7 +131,6 @@ def handle_message(event):
             )
 
     elif event.message.text.startswith('您選擇了：'):
-        print(event.message.text)
         try:
             question = im.get_current_question(
                 im_type='LINE',
@@ -150,12 +149,21 @@ def handle_message(event):
                 TextSendMessage(text='No matching answer'),
             )
             return
+
         is_correct = user_answer == question.answer
         user.save_answer(question, is_correct)
         if is_correct:
-            pass
+            response_message = '恭喜答對'
         else:
-            pass
+            response_message = '答錯了 :('
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            [
+                TextSendMessage(text=response_message),
+                *get_message_for_next_question(user, event)
+            ]
+        )
 
 
 @line_webhook_handler.add(PostbackEvent)
