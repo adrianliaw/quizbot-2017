@@ -24,11 +24,25 @@ ACTION = "a"
 SELECT_TICKET = "0"
 
 
+def get_quizzler_user(user_id):
+    try:
+        return users.get_user(im_type='LINE', im_id=user_id)
+    except users.UserDoesNotExist:
+        return None
+
+
 @line_webhook_handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
+    user = get_quizzler_user(user_id)
 
     if '/login' == event.message.text.strip():
+        if user is not None:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text='無效：您已經註冊過了')
+            )
+            return
         line_bot_api.reply_message(
             event.reply_token,
             TemplateSendMessage(
@@ -36,13 +50,13 @@ def handle_message(event):
                 template=ButtonsTemplate(
                     title='請選擇票種',
                     text='請選擇您在 KKTIX 上註冊的票券的「活動名稱」：\n'
-                         'PyCon Taiwan 2017 _____ / 活動報名',
+                         '「PyCon Taiwan 2017 _____ / 活動報名」',
                     actions=[
                         PostbackTemplateAction(
                             label=label,
-                            text='KKTIX 活動：PyCon Taiwan 2017'
-                                 f'{label} / 活動報名',
-                            data=f'a=0&ticket={ticket}',
+                            text='KKTIX 活動：「PyCon Taiwan 2017 '
+                                 f'{label} / 活動報名」',
+                            data=f'{ACTION}={SELECT_TICKET}&ticket={ticket}',
                         )
                         for ticket, label in [
                             ('REG', 'Registration'), ('INV', 'Invitation')
@@ -59,17 +73,15 @@ def handle_message(event):
         )
         if ticket is not None and serial is False:
             serial = event.message.text
-            try:
-                users.get_user(im_type='LINE', im_id=user_id)
-            except users.UserDoesNotExist:
-                user = users.add_user_im(ticket=ticket, serial=serial,
-                                         im_type='LINE', im_id=user_id)
-            else:
+            if get_quizzler_user(user_id) is not None:
                 line_bot_api.reply_message(
                     event.reply_token,
-                    TextSendMessage(text='您已經註冊過了')
+                    TextSendMessage(text='無效：您已經註冊過了')
                 )
                 return
+            else:
+                user = users.add_user_im(ticket=ticket, serial=serial,
+                                         im_type='LINE', im_id=user_id)
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text=user.serial)
@@ -80,8 +92,15 @@ def handle_message(event):
 @line_webhook_handler.add(PostbackEvent)
 def handle_postback_answer(event):
     user_id = event.source.user_id
+    user = get_quizzler_user(user_id)
     data = dict(urlparse.parse_qsl(event.postback.data))
     if data.get(ACTION) == SELECT_TICKET:
+        if user is not None:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text='無效：您已經註冊過了')
+            )
+            return
         store.set(f'{user_id}.ticket', data.get("ticket"))
         store.set(f'{user_id}.serial', False)
         line_bot_api.reply_message(
