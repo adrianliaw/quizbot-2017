@@ -51,7 +51,7 @@ def get_message_for_next_question(user, event):
     columns = [
         CarouselColumn(
             title=f'選項 {i}',
-            text=choice,
+            text=choice[:60],
             actions=[
                 MessageTemplateAction(label='選擇', text=f'您選擇了：{choice}')
             ]
