@@ -12,6 +12,8 @@ from linebot.models import (
     PostbackTemplateAction,
     MessageTemplateAction,
     PostbackEvent,
+    CarouselTemplate,
+    CarouselColumn,
 )
 from werkzeug.contrib.cache import SimpleCache
 
@@ -26,12 +28,7 @@ line_bot_api = LineBotApi(os.environ.get('LINE_ACCESS_TOKEN'))
 line_webhook_handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
 
 ACTION = 'a'
-QUESTION = 'q'
 SELECT_TICKET = '0'
-DO_ANSWER = '1'
-CORRECTNESS = 'c'
-TRUE = '1'
-FALSE = '0'
 
 
 def get_quizzler_user(user_id):
@@ -43,26 +40,34 @@ def get_quizzler_user(user_id):
 
 def get_message_for_next_question(user, event):
     question = user.get_next_question()
-    users.set_current_question(
+    im.set_current_question(
         question=question,
         im_type='LINE',
         im_id=event.source.user_id
     )
 
-    buttons = [
-        MessageTemplateAction(label=choice, text=f'您選擇了：{choice}')
-        for choice in [question.answer, *question.wrong_choices]
-    ]
-    buttons.shuffle()
-
-    return TemplateSendMessage(
-        alt_text='Question',
-        template=ButtonsTemplate(
-            title='問題：',
-            text=question.message,
-            actions=buttons
+    choices = [question.answer, *question.wrong_choices]
+    random.shuffle(choices)
+    columns = [
+        CarouselColumn(
+            title=f'選項 {i}',
+            text=choice,
+            actions=[
+                MessageTemplateAction(label='選擇', text=f'您選擇了：{choice}')
+            ]
         )
-    )
+        for i, choice in enumerate(choices, 1)
+    ]
+
+    return [
+        TextSendMessage(text=f'Q: {question.message}'),
+        TemplateSendMessage(
+            alt_text='Select answer',
+            template=CarouselTemplate(
+                columns=columns
+            )
+        )
+    ]
 
 
 @line_webhook_handler.add(MessageEvent, message=TextMessage)
@@ -121,30 +126,36 @@ def handle_message(event):
                 event.reply_token,
                 [
                     TextSendMessage(text=f'註冊完成，開始遊戲！'),
-                    get_message_for_next_question(user, event),
+                    *get_message_for_next_question(user, event),
                 ]
             )
 
-        elif event.message.text.startswith('您選擇了：'):
-            try:
-                question = im.get_current_question(
-                    im_type='LINE',
-                    im_id=user_id
-                )
-            except im.CurrentQuestionDoesNotExist:
-                return
-            user_answer = event.message.text[len('您選擇了：'):]
-            if user_answer not in [question.answer, *question.wrong_choices]:
-                return
-            is_correct = user_answer == question.answer
-            user.save_answer(question, is_correct)
+    elif event.message.text.startswith('您選擇了：'):
+        print(event.message.text)
+        try:
+            question = im.get_current_question(
+                im_type='LINE',
+                im_id=user_id
+            )
+        except im.CurrentQuestionDoesNotExist:
             line_bot_api.reply_message(
                 event.reply_token,
-                [
-                    TextSendMessage(text=f'答錯了 :('),
-                    get_message_for_next_question(user, event),
-                ]
+                TextSendMessage(text='CurrentQuestionDoesNotExist'),
             )
+            return
+        user_answer = event.message.text[len('您選擇了：'):]
+        if user_answer not in [question.answer, *question.wrong_choices]:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text='No matching answer'),
+            )
+            return
+        is_correct = user_answer == question.answer
+        user.save_answer(question, is_correct)
+        if is_correct:
+            pass
+        else:
+            pass
 
 
 @line_webhook_handler.add(PostbackEvent)
